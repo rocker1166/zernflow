@@ -8,6 +8,7 @@ import { upsertContactForSender } from "@/lib/inbox-sync";
 import { processComment } from "@/lib/comment-processor";
 import type { Database } from "@/lib/types/database";
 import { messagePreview } from "@/lib/message-preview";
+import { optOutScope, phoneOf, queueOptOut, type OptOutPayload } from "@/lib/whatsapp-opt-out";
 
 // ── Zernio API webhook payload ───────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ interface WebhookPayload {
       name: string;
       username: string | null;
       picture: string | null;
+      /** WhatsApp only; missing for people who hide their number behind a username. */
+      phoneNumber?: string | null;
     };
     sentAt: string;
     isRead: boolean;
@@ -51,6 +54,8 @@ interface WebhookPayload {
     callbackData?: string;
     postbackPayload?: string;
     postbackTitle?: string;
+    /** WhatsApp only: payload of a tapped template button. */
+    buttonPayload?: string;
   };
   timestamp: string;
 }
@@ -180,6 +185,13 @@ async function handleWebhook(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
+  // Saved before the event is claimed and acked: if this throws, the 500 makes Zernio
+  // deliver the message again, so a STOP is never lost.
+  const optOut = whatsAppOptOut(payload, channel);
+  if (optOut) {
+    await queueOptOut(supabase, msg.platformMessageId || msg.id, optOut);
+  }
+
   if (!(await claimWebhookEvent(supabase, eventId))) {
     return NextResponse.json({ ok: true, skipped: true, reason: "duplicate_event" });
   }
@@ -189,7 +201,7 @@ async function handleWebhook(request: NextRequest) {
   // nodes) must never run before the 200 goes out.
   after(async () => {
     try {
-      await processMessageEvent(supabase, payload, channel);
+      await processMessageEvent(supabase, payload, channel, optOut !== null);
     } catch (err) {
       console.error("Webhook message processing error:", err);
     }
@@ -198,10 +210,31 @@ async function handleWebhook(request: NextRequest) {
   return NextResponse.json({ ok: true, queued: true });
 }
 
+/** The opt-out a WhatsApp message asks for, or null for any other message. */
+function whatsAppOptOut(
+  { message: msg, conversation: conv, account, metadata }: WebhookPayload,
+  channel: Database["public"]["Tables"]["channels"]["Row"],
+): OptOutPayload | null {
+  if (channel.platform !== "whatsapp" || msg.direction === "outgoing") return null;
+  const scope = optOutScope({ text: msg.text, buttonPayload: metadata?.buttonPayload });
+  if (!scope) return null;
+  return {
+    scope,
+    phone: phoneOf(msg.sender),
+    senderId: msg.sender.id,
+    senderName: msg.sender.name || msg.sender.username || msg.sender.id,
+    channelId: channel.id,
+    workspaceId: channel.workspace_id,
+    lateConversationId: conv.id,
+    lateAccountId: account.id,
+  };
+}
+
 async function processMessageEvent(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   payload: WebhookPayload,
   channel: Database["public"]["Tables"]["channels"]["Row"],
+  isOptOut: boolean,
 ) {
   const { message: msg, conversation: conv, account, metadata } = payload;
 
@@ -268,7 +301,8 @@ async function processMessageEvent(
 
   // ── Flow engine ───────────────────────────────────────────────────────────
 
-  if (!conversation.is_automation_paused) {
+  // An opt-out is answered by its own job, never by a flow.
+  if (!isOptOut && !conversation.is_automation_paused) {
     const incomingMessage = {
       text: msg.text || undefined,
       postbackPayload: metadata?.postbackPayload || undefined,

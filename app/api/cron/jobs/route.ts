@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { FlowLoadError, resumeSession } from "@/lib/flow-engine/engine";
 import type { Json } from "@/lib/types/database";
+import { OPT_OUT_JOB, OPT_OUT_MAX_ATTEMPTS, runOptOut, type OptOutPayload } from "@/lib/whatsapp-opt-out";
 
 // Signals the handler to skip retry/backoff and route straight to the
 // failed + settle branch (which performs/re-attempts the session cancel).
@@ -78,9 +79,10 @@ export async function GET(request: NextRequest) {
 
   let processed = 0;
   let failed = 0;
-  const maxAttempts = 3;
 
   for (const job of jobs) {
+    const maxAttempts = job.type === OPT_OUT_JOB ? OPT_OUT_MAX_ATTEMPTS : 3;
+
     // A 'processing' row without claimed_at cannot be aged: it is either a
     // pre-backfill strand or a live claim by an old-code invocation that
     // never stamped claimed_at (deploy window). Processing it now could
@@ -153,6 +155,9 @@ export async function GET(request: NextRequest) {
       processed++;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+      if (job.type === OPT_OUT_JOB) {
+        console.error(`Opt-out job ${job.id} failed (try ${job.attempts + 1} of ${maxAttempts}):`, errorMessage);
+      }
 
       if (err instanceof SessionRecheckError) {
         // Requeue past the recency window and undo the claim's attempts bump:
@@ -171,7 +176,7 @@ export async function GET(request: NextRequest) {
         await failJobAndSettleSession({ supabase, job, errorMessage });
       } else {
         // Retry with backoff
-        const backoffMs = Math.pow(2, job.attempts + 1) * 5000;
+        const backoffMs = Math.min(Math.pow(2, job.attempts + 1) * 5000, 60 * 60 * 1000);
         const retryAt = new Date(Date.now() + backoffMs).toISOString();
         await supabase
           .from("scheduled_jobs")
@@ -486,6 +491,10 @@ async function processJob(
       break;
     }
 
+    case OPT_OUT_JOB:
+      await runOptOut(supabase, job.payload as unknown as OptOutPayload);
+      break;
+
     case "send_broadcast": {
       const payload = job.payload as {
         broadcastId: string;
@@ -543,6 +552,17 @@ async function processJob(
       }
 
       if (recipient.status !== "pending") return;
+
+      // They may have unsubscribed after the broadcast was queued.
+      const contact = recipient.contacts as { is_subscribed: boolean } | null;
+      if (contact?.is_subscribed === false) {
+        await settleBroadcastRecipientAsFailed({
+          supabase,
+          job,
+          errorMessage: "Unsubscribed before this was sent",
+        });
+        return;
+      }
 
       // Get workspace API key
       const broadcast = recipient.broadcasts as { workspace_id: string } | null;

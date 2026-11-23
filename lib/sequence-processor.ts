@@ -12,7 +12,7 @@ export async function processSequenceSteps() {
   // Fetch enrollments that are due
   const { data: enrollments, error } = await supabase
     .from("sequence_enrollments")
-    .select("*, sequences(*)")
+    .select("*, sequences(*), contacts(is_subscribed)")
     .eq("status", "active")
     .lte("next_step_at", new Date().toISOString())
     .limit(50);
@@ -55,11 +55,12 @@ async function processEnrollment(
       steps: unknown;
       status: string;
     } | null;
+    contacts: { is_subscribed: boolean } | null;
   }
 ) {
   const sequence = enrollment.sequences;
-  if (!sequence || sequence.status !== "active") {
-    // Sequence was paused/deleted, cancel enrollment
+  if (!sequence || sequence.status !== "active" || enrollment.contacts?.is_subscribed === false) {
+    // Sequence was paused/deleted or the contact unsubscribed, cancel enrollment
     await supabase
       .from("sequence_enrollments")
       .update({ status: "cancelled" })
