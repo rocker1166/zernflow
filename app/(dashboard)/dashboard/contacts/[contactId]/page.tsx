@@ -10,6 +10,8 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
+import { TagChip } from "@/components/tag-chip";
+import { compareTags } from "@/lib/smart-tags/taxonomy";
 
 export default async function ContactDetailPage({
   params,
@@ -51,7 +53,8 @@ export default async function ContactDetailPage({
   const customFields = customFieldsRes.data ?? [];
   const tags = contact.contact_tags
     .map((ct: { tags: unknown }) => ct.tags)
-    .filter(Boolean) as { id: string; name: string; color: string | null }[];
+    .filter(Boolean) as { id: string; name: string; color: string | null; category: string | null }[];
+  tags.sort(compareTags);
 
   function formatDate(dateStr: string | null): string {
     if (!dateStr) return "Never";
@@ -122,21 +125,7 @@ export default async function ContactDetailPage({
         {tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {tags.map((tag) => (
-              <span
-                key={tag.id}
-                className="inline-flex rounded-full border border-border px-2.5 py-0.5 text-xs font-medium"
-                style={
-                  tag.color
-                    ? {
-                        backgroundColor: `${tag.color}20`,
-                        borderColor: `${tag.color}40`,
-                        color: tag.color,
-                      }
-                    : undefined
-                }
-              >
-                {tag.name}
-              </span>
+              <TagChip key={tag.id} tag={tag} solid={tag.category === "stage"} />
             ))}
           </div>
         )}
@@ -202,7 +191,7 @@ export default async function ContactDetailPage({
                 {conversations.map((conv) => (
                   <Link
                     key={conv.id}
-                    href="/dashboard/inbox"
+                    href={`/dashboard/inbox?c=${conv.id}`}
                     className="flex items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-accent/50"
                   >
                     <PlatformIcon

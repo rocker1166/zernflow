@@ -21,8 +21,8 @@ import { createClient } from "@/lib/supabase/client";
 import {
   SegmentBuilder,
   createEmptyFilter,
-  type SegmentFilter,
 } from "@/components/segment-builder";
+import type { SegmentFilter } from "@/lib/segments";
 import type { Database, BroadcastStatus, Json } from "@/lib/types/database";
 
 type Broadcast = Database["public"]["Tables"]["broadcasts"]["Row"];

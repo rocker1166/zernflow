@@ -34,6 +34,10 @@ export function ContactAvatar({
         alt=""
         referrerPolicy="no-referrer"
         onError={() => setBroken(true)}
+        // An expired link can fail before React is listening.
+        ref={(img) => {
+          if (img?.complete && img.naturalWidth === 0) setBroken(true);
+        }}
         className={cn("rounded-full object-cover", className)}
       />
     );

@@ -5,20 +5,24 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { workspace, supabase } = await getWorkspace();
   const { c: openId } = await searchParams;
 
-  const { data: conversations } = await supabase
-    .from("conversations")
-    .select("*, contacts(*, contact_channels(platform_username))")
-    .eq("workspace_id", workspace.id)
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(50);
+  const [{ data: conversations }, { data: tags }] = await Promise.all([
+    supabase
+      .from("conversations")
+      .select("*, contacts(*, contact_channels(platform_username), contact_tags(tag_id))")
+      .eq("workspace_id", workspace.id)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      // Enough for the tag filter to mean something.
+      .limit(500),
+    supabase.from("tags").select("id, name, color, category").eq("workspace_id", workspace.id).order("name"),
+  ]);
 
   // ?c=<id> opens one conversation (links from Comment to DM activity). Fetch it when it is
-  // older than the 50 loaded.
+  // older than the ones loaded.
   let list = conversations ?? [];
   if (openId && !list.some((c) => c.id === openId)) {
     const { data: extra } = await supabase
       .from("conversations")
-      .select("*, contacts(*, contact_channels(platform_username))")
+      .select("*, contacts(*, contact_channels(platform_username), contact_tags(tag_id))")
       .eq("workspace_id", workspace.id)
       .eq("id", openId)
       .maybeSingle();
@@ -28,6 +32,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   return (
     <InboxView
       conversations={list}
+      tags={tags ?? []}
       workspaceId={workspace.id}
       initialSelectedId={openId ?? null}
     />

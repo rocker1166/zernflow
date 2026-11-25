@@ -13,6 +13,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
+import { TagChip } from "@/components/tag-chip";
+import { compareTags } from "@/lib/smart-tags/taxonomy";
 import { ContactAvatar } from "@/components/inbox/contact-avatar";
 import { profileLabel, profileUrl } from "@/lib/profile-link";
 import type { Database, Platform } from "@/lib/types/database";
@@ -85,6 +87,7 @@ export function ContactPanel({
         const tags = (tagsRes.data ?? [])
           .map((ct) => ct.tags)
           .filter(Boolean) as TagRow[];
+        tags.sort(compareTags);
 
         const customFields = (fieldsRes.data ?? [])
           .map((cf) => ({
@@ -269,21 +272,7 @@ export function ContactPanel({
               {details.tags.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {details.tags.map((tag) => (
-                    <span
-                      key={tag.id}
-                      className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs"
-                      style={
-                        tag.color
-                          ? {
-                              backgroundColor: `${tag.color}20`,
-                              borderColor: `${tag.color}40`,
-                              color: tag.color,
-                            }
-                          : undefined
-                      }
-                    >
-                      {tag.name}
-                    </span>
+                    <TagChip key={tag.id} tag={tag} solid={tag.category === "stage"} />
                   ))}
                 </div>
               ) : (

@@ -731,7 +731,7 @@ async function executeTag(
   if (data.action === "add") {
     await supabase
       .from("contact_tags")
-      .upsert({ contact_id: context.contactId, tag_id: tag.id })
+      .upsert({ contact_id: context.contactId, tag_id: tag.id, source: "manual" })
       .select();
   } else {
     await supabase

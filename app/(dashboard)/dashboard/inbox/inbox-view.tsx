@@ -3,24 +3,23 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { MessageSquare, RefreshCw, User } from "lucide-react";
-import { ConversationList } from "@/components/inbox/conversation-list";
+import { ConversationList, type Conversation, type InboxTag } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactPanel } from "@/components/inbox/contact-panel";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/lib/types/database";
 
-type Conversation = Database["public"]["Tables"]["conversations"]["Row"] & {
-  contacts: Database["public"]["Tables"]["contacts"]["Row"] | null;
-};
 type Message = Database["public"]["Tables"]["messages"]["Row"];
 
 export function InboxView({
   conversations,
+  tags,
   workspaceId,
   initialSelectedId = null,
 }: {
   conversations: Conversation[];
+  tags: InboxTag[];
   workspaceId: string;
   initialSelectedId?: string | null;
 }) {
@@ -114,6 +113,7 @@ export function InboxView({
       <div className="w-80 flex-shrink-0">
         <ConversationList
           conversations={conversations}
+          tags={tags}
           workspaceId={workspaceId}
           selectedId={selected?.id ?? null}
           onSelect={handleSelect}

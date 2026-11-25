@@ -6,11 +6,17 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
 import { ContactAvatar } from "@/components/inbox/contact-avatar";
+import { FacetMenu } from "@/components/contacts/facet-menu";
+import { TagChip } from "@/components/tag-chip";
+import { compareTags, groupTags } from "@/lib/smart-tags/taxonomy";
 import type { Database, Platform, ConversationStatus } from "@/lib/types/database";
 
-type Conversation = Database["public"]["Tables"]["conversations"]["Row"] & {
-  contacts: Database["public"]["Tables"]["contacts"]["Row"] | null;
+export type Conversation = Database["public"]["Tables"]["conversations"]["Row"] & {
+  contacts:
+    | (Database["public"]["Tables"]["contacts"]["Row"] & { contact_tags?: { tag_id: string }[] })
+    | null;
 };
+export type InboxTag = Pick<Database["public"]["Tables"]["tags"]["Row"], "id" | "name" | "color" | "category">;
 
 function formatTime(dateStr: string | null): string {
   if (!dateStr) return "";
@@ -31,17 +37,20 @@ function formatTime(dateStr: string | null): string {
 
 export function ConversationList({
   conversations: initialConversations,
+  tags,
   workspaceId,
   selectedId,
   onSelect,
 }: {
   conversations: Conversation[];
+  tags: InboxTag[];
   workspaceId: string;
   selectedId: string | null;
   onSelect: (conversation: Conversation) => void;
 }) {
   const [conversations, setConversations] = useState(initialConversations);
   const [search, setSearch] = useState("");
+  const [tagIds, setTagIds] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("open");
   // Relative timestamps depend on the client's clock/locale, which differ from the
   // server's during SSR and trigger a hydration mismatch (React #418, which crashes
@@ -85,7 +94,7 @@ export function ConversationList({
             // Fetch full conversation with contact
             const { data } = await supabase
               .from("conversations")
-              .select("*, contacts(*)")
+              .select("*, contacts(*, contact_tags(tag_id))")
               .eq("id", inserted.id)
               .single();
             if (data) {
@@ -101,7 +110,14 @@ export function ConversationList({
     };
   }, [workspaceId]);
 
+  const groups = groupTags(tags).filter((g) => g.key === "stage" || g.key === "person" || g.key === "intent");
+  const wears = (c: Conversation, id: string) => Boolean(c.contacts?.contact_tags?.some((t) => t.tag_id === id));
+  const wanted = groups
+    .map((g) => g.tags.filter((t) => tagIds.includes(t.id)))
+    .filter((g) => g.length > 0);
+
   const filtered = conversations.filter((c) => {
+    if (!wanted.every((group) => group.some((t) => wears(c, t.id)))) return false;
     if (statusFilter !== "all" && c.status !== statusFilter) return false;
     if (search) {
       const name = c.contacts?.display_name?.toLowerCase() ?? "";
@@ -153,6 +169,28 @@ export function ConversationList({
           </button>
         ))}
       </div>
+
+      {/* Tag filters */}
+      {groups.length > 0 && (
+        <div className="flex gap-1.5 px-3 pb-2">
+          {groups.map((group) => (
+            <FacetMenu
+              key={group.key}
+              label={group.label}
+              options={group.tags.map((t) => ({
+                value: t.id,
+                label: t.name,
+                color: t.color,
+                count: conversations.filter((c) => wears(c, t.id)).length,
+              }))}
+              selected={tagIds.filter((id) => group.tags.some((t) => t.id === id))}
+              onChange={(selected) =>
+                setTagIds((prev) => [...prev.filter((id) => !group.tags.some((t) => t.id === id)), ...selected])
+              }
+            />
+          ))}
+        </div>
+      )}
 
       {/* Conversation list */}
       <div className="flex-1 overflow-y-auto">
@@ -210,11 +248,27 @@ export function ConversationList({
                     </span>
                   )}
                 </div>
+                <RowTags tags={tags.filter((t) => wears(conversation, t.id))} />
               </div>
             </button>
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+/** What matters while scanning chats: the stage, who they are and what they want. */
+function RowTags({ tags }: { tags: InboxTag[] }) {
+  const shown = tags
+    .filter((t) => t.category === "stage" || t.category === "person" || t.category === "intent")
+    .sort(compareTags);
+  if (shown.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {shown.map((t) => (
+        <TagChip key={t.id} tag={t} solid={t.category === "stage"} className="px-1.5 py-0 text-[10px]" />
+      ))}
     </div>
   );
 }

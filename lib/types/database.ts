@@ -272,6 +272,7 @@ export interface Database {
           workspace_id: string;
           name: string;
           color: string | null;
+          category: string | null;
           created_at: string;
         };
         Insert: {
@@ -279,11 +280,13 @@ export interface Database {
           workspace_id: string;
           name: string;
           color?: string | null;
+          category?: string | null;
           created_at?: string;
         };
         Update: {
           name?: string;
           color?: string | null;
+          category?: string | null;
         };
         Relationships: [
           {
@@ -299,16 +302,19 @@ export interface Database {
         Row: {
           contact_id: string;
           tag_id: string;
+          source: string;
           created_at: string;
         };
         Insert: {
           contact_id: string;
           tag_id: string;
+          source?: string;
           created_at?: string;
         };
         Update: {
           contact_id?: string;
           tag_id?: string;
+          source?: string;
         };
         Relationships: [
           {
@@ -323,6 +329,48 @@ export interface Database {
             columns: ["tag_id"];
             isOneToOne: false;
             referencedRelation: "tags";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      contact_tagging: {
+        Row: {
+          contact_id: string;
+          workspace_id: string;
+          due_at: string | null;
+          attempts: number;
+          last_error: string | null;
+          tagged_at: string | null;
+          hash: string | null;
+          answers: Json | null;
+          input_tokens: number;
+        };
+        Insert: {
+          contact_id: string;
+          workspace_id: string;
+          due_at?: string | null;
+          attempts?: number;
+          last_error?: string | null;
+          tagged_at?: string | null;
+          hash?: string | null;
+          answers?: Json | null;
+          input_tokens?: number;
+        };
+        Update: {
+          due_at?: string | null;
+          attempts?: number;
+          last_error?: string | null;
+          tagged_at?: string | null;
+          hash?: string | null;
+          answers?: Json | null;
+          input_tokens?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "contact_tagging_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: true;
+            referencedRelation: "contacts";
             referencedColumns: ["id"];
           },
         ];

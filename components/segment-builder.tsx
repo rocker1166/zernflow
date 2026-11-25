@@ -6,47 +6,12 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/types/database";
 import { PLATFORMS, PLATFORM_LABELS } from "@/lib/platforms";
+import { groupTags } from "@/lib/smart-tags/taxonomy";
+import type { FilterField, FilterGroup, FilterOperator, FilterRule, SegmentFilter } from "@/lib/segments";
 
 type Tag = Database["public"]["Tables"]["tags"]["Row"];
 type CustomFieldDef =
   Database["public"]["Tables"]["custom_field_definitions"]["Row"];
-
-// --- Filter types ---
-
-export type FilterOperator =
-  | "equals"
-  | "not_equals"
-  | "contains"
-  | "gt"
-  | "lt"
-  | "before"
-  | "after";
-
-export type FilterField =
-  | "has_tag"
-  | "missing_tag"
-  | "custom_field"
-  | "platform"
-  | "is_subscribed"
-  | "last_interaction";
-
-export interface FilterRule {
-  id: string;
-  field: FilterField;
-  operator: FilterOperator;
-  value: string;
-}
-
-export interface FilterGroup {
-  id: string;
-  combinator: "and" | "or";
-  rules: FilterRule[];
-}
-
-export interface SegmentFilter {
-  combinator: "and" | "or";
-  groups: FilterGroup[];
-}
 
 // --- Operator options per field ---
 
@@ -207,10 +172,14 @@ function FilterRuleRow({
             className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">Select tag...</option>
-            {tags.map((tag) => (
-              <option key={tag.id} value={tag.id}>
-                {tag.name}
-              </option>
+            {groupTags(tags).map((group) => (
+              <optgroup key={group.key} label={group.label}>
+                {group.tags.map((tag) => (
+                  <option key={tag.id} value={tag.id}>
+                    {tag.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         );
