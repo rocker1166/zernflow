@@ -22,6 +22,8 @@ import {
 
 /** A choice below this is not used. */
 export const CONF_FLOOR = 0.7;
+/** Two or three near options that share this much between them count as one answer. */
+const SPLIT = 0.85;
 /** A yes/no counts from here. */
 export const YES = 0.6;
 /** Needed before treating someone as opted out. */
@@ -77,9 +79,9 @@ const PERSON_QUESTION: JevQuestion = {
     "Who is the other person ('them') to Kaafila, judging by what they say and by what they answered or were offered? A comment that is only our keyword (Kaafila, Kafila) on a reel means they are answering what that reel offers.",
   criteria: {
     captain:
-      "Wants to be, or is being considered as, a trip captain, trip leader, trek leader or crew, or commented on or answered our Trip Captain reel or the 'travel for free and get paid' offer",
+      "The chat is about the trip captain, trip leader or crew role: we asked about their trip captain experience, they want that role, or they commented on or answered our Trip Captain reel or the 'travel for free and get paid' offer. A creator who is asked about or answers on trip captain experience is this",
     creator:
-      "A content creator, influencer, blogger or page we invited to host trips, collaborate or sell us content, or who offers that",
+      "A content creator, influencer, blogger or page we invited as a Travel Host, to collaborate or to sell us content, or who offers that, with no talk of being a trip captain",
     traveller: "Wants to join or book a trip, or asks about a trip's dates, price, place or plan",
     agency: "A travel agency, tour operator, hotel or transport company talking about working together",
     seller: "Pitches their own service or product to Kaafila: marketing, editing, software, promotion, followers",
@@ -91,9 +93,11 @@ const INTENT_QUESTION: JevQuestion = {
   type: "choice",
   instructions: "What is the other person's latest position, from their most recent words? Messages can be in English, Hindi or Hinglish.",
   criteria: {
-    interested: "Says yes, ok or done, agrees, is interested, wants to join, shares their number to go ahead, or sends only our keyword (Kaafila, Kafila)",
+    interested: "Only says yes, ok or done, agrees, is interested, wants to join, shares their number to go ahead, or sends only our keyword (Kaafila, Kafila)",
     wants_details: "Wants to know more before deciding, asks us to share details or the plan",
     question: "Asks one specific question",
+    answered:
+      "Answers a question we asked, such as describing their trip or hosting experience, their work or their page (not by sharing a phone number)",
     not_now: "Interested in principle but the timing is wrong",
     not_interested: "Declines",
     greeting: "Only a greeting such as hi or hello, with nothing else said so far",
@@ -192,18 +196,23 @@ export function decideTags(
     return a?.choice && (a.confidence ?? 0) >= CONF_FLOOR ? a.choice : null;
   };
 
+  const together = (id: string, options: string[]) =>
+    options.reduce((sum, o) => sum + (answers[id]?.probabilities?.[o] ?? 0), 0);
+
   const source = sourceOf(facts);
   if (source) tags.push(source);
   const funnel = funnelOf(facts);
   if (funnel) tags.push(funnel);
 
   const autoReply = words && yes("auto_reply");
-  const person = choice("person");
+  // Split between the two, and they have led trips: captain is the useful reading.
+  const person = choice("person") ?? (together("person", ["captain", "creator"]) >= SPLIT && yes("has_experience") ? "captain" : null);
   if (person && Object.hasOwn(PERSON, person)) tags.push(PERSON[person as keyof typeof PERSON]);
 
   let intent: string | null = null;
   if (words && !autoReply) {
-    intent = choice("intent");
+    // Split between ways of saying yes: the yes is what matters.
+    intent = choice("intent") ?? (together("intent", ["interested", "answered", "wants_details"]) >= SPLIT ? "interested" : null);
     if (intent && Object.hasOwn(INTENT, intent)) tags.push(INTENT[intent as keyof typeof INTENT]);
     for (const id of ["form_filled", "wants_call", "asked_pay", "asked_price", "has_experience", "problem"] as const) {
       if (yes(id)) tags.push(SIGNAL[id]);

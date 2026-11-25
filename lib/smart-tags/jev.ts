@@ -15,6 +15,8 @@ export interface JevAnswer {
   /** choice */
   choice?: string;
   confidence?: number;
+  /** choice: every option's probability */
+  probabilities?: Record<string, number>;
   /** noul: probability of yes */
   noul?: number;
 }

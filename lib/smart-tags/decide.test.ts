@@ -71,6 +71,15 @@ describe("what Jev reads", () => {
     expect(got).not.toContain("Interested");
     expect(got).toContain("Needs review");
   });
+  it("reads a split between near options as one answer, and only between those", () => {
+    const split = (probabilities: Record<string, number>): JevAnswer => ({ choice: Object.keys(probabilities)[0], confidence: 0.4, probabilities });
+    const f = facts([ev("them", "led 85 trips", 2), ev("us", "great", 1)]);
+    const person = split({ creator: 0.52, captain: 0.48 });
+    expect(names(f, { person, has_experience: p(0.9) })).toContain("Trip captain");
+    expect(names(f, { person })).not.toContain("Trip captain");
+    expect(names(f, { intent: split({ interested: 0.5, answered: 0.4, unclear: 0.1 }) })).toContain("Interested");
+    expect(names(f, { intent: split({ interested: 0.5, not_now: 0.5 }) })).not.toContain("Interested");
+  });
   it("ignores a choice it does not know", () => {
     const f = facts([ev("them", "x", 1), ev("us", "y", 0)]);
     const got = names(f, { person: say("toString"), intent: say("constructor") });

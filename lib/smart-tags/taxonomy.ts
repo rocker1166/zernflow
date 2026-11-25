@@ -66,6 +66,7 @@ export const INTENT = define("intent", {
   interested: "Interested",
   wants_details: "Wants details",
   question: "Asked a question",
+  answered: "Answered us",
   not_now: ["Not now", "#a3a3a3"],
   not_interested: ["Not interested", "#a3a3a3"],
   greeting: ["Said hi", "#a3a3a3"],

@@ -14,7 +14,7 @@ import { tagColor, type TagDef } from "@/lib/smart-tags/taxonomy";
 type Db = SupabaseClient<Database>;
 
 /** Zernio allows 60 calls a minute and the live automations share them. */
-const CONTACTS_PER_RUN = 10;
+const CONTACTS_PER_RUN = 20;
 const RUN_BUDGET_MS = 45_000;
 const CAPTIONS_TTL_MS = 60 * 60 * 1000;
 
