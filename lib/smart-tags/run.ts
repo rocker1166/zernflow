@@ -164,7 +164,20 @@ async function loadFacts(
       // It had messages before: an empty answer now is a bad read, not an empty chat.
       if (chat.messages.length === 0 && hash) throw new Error("Zernio answered with an empty chat");
       truncated ||= chat.hasMore;
-      parts.push(messageEvents(chat.messages));
+      const events = messageEvents(chat.messages);
+      parts.push(events);
+      const lastInbound = Math.max(0, ...events.filter((e) => e.from === "them").map((e) => e.at));
+      if (lastInbound) {
+        const at = new Date(lastInbound).toISOString();
+        // Never back: the webhook may have seen something newer meanwhile.
+        await must(
+          supabase
+            .from("conversations")
+            .update({ last_inbound_at: at })
+            .eq("id", conv.id)
+            .or(`last_inbound_at.is.null,last_inbound_at.lt.${at}`)
+        );
+      }
     } else {
       // Zernio has no chat until they answer a comment DM; what the flow sent is stored here.
       const sent = await must(

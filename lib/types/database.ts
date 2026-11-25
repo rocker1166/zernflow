@@ -646,6 +646,7 @@ export interface Database {
           status: ConversationStatus;
           assigned_to: string | null;
           last_message_at: string | null;
+          last_inbound_at: string | null;
           last_message_preview: string | null;
           unread_count: number;
           is_automation_paused: boolean;
@@ -662,6 +663,7 @@ export interface Database {
           status?: ConversationStatus;
           assigned_to?: string | null;
           last_message_at?: string | null;
+          last_inbound_at?: string | null;
           last_message_preview?: string | null;
           unread_count?: number;
           is_automation_paused?: boolean;
@@ -673,6 +675,7 @@ export interface Database {
           status?: ConversationStatus;
           assigned_to?: string | null;
           last_message_at?: string | null;
+          last_inbound_at?: string | null;
           last_message_preview?: string | null;
           unread_count?: number;
           is_automation_paused?: boolean;
@@ -748,6 +751,35 @@ export interface Database {
             referencedColumns: ["id"];
           },
         ];
+      };
+      message_templates: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          name: string;
+          body: string;
+          button_label: string | null;
+          button_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          name: string;
+          body: string;
+          button_label?: string | null;
+          button_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          body?: string;
+          button_label?: string | null;
+          button_url?: string | null;
+        };
+        Relationships: [];
       };
       broadcasts: {
         Row: {

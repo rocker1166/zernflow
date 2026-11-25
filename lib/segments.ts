@@ -141,9 +141,9 @@ function splitField(value: string): [string, string] {
 
 // ── Reading contacts ────────────────────────────────────────────────────────
 
-/** Select string for rows toSegmentContact() understands. */
-export const SEGMENT_SELECT =
-  "id, is_subscribed, last_interaction_at, contact_tags(tags(id, name)), contact_channels(channel_id, channels(platform)), contact_custom_fields(value, custom_field_definitions(slug))";
+/** The fields toSegmentContact() reads. */
+export const SEGMENT_FIELDS =
+  "is_subscribed, last_interaction_at, contact_tags(tags(id, name)), contact_channels(platform_username, channels(platform)), contact_custom_fields(value, custom_field_definitions(slug))" as const;
 
 interface SegmentRow {
   is_subscribed: boolean;

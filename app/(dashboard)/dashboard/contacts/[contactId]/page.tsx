@@ -10,6 +10,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { PlatformIcon } from "@/components/platform-icon";
+import { ContactAvatar } from "@/components/inbox/contact-avatar";
 import { TagChip } from "@/components/tag-chip";
 import { compareTags } from "@/lib/smart-tags/taxonomy";
 
@@ -79,18 +80,7 @@ export default async function ContactDetailPage({
           Back to contacts
         </Link>
         <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-muted text-lg font-semibold">
-            {contact.avatar_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={contact.avatar_url}
-                alt={contact.display_name || "Contact"}
-                className="h-12 w-12 rounded-full object-cover"
-              />
-            ) : (
-              contact.display_name?.[0]?.toUpperCase() ?? "?"
-            )}
-          </div>
+          <ContactAvatar name={contact.display_name} src={contact.avatar_url} className="h-12 w-12 flex-shrink-0 text-lg" />
           <div>
             <h1 className="text-xl font-bold">
               {contact.display_name ?? "Unknown"}

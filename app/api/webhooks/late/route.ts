@@ -275,6 +275,7 @@ async function processMessageEvent(
         late_conversation_id: conv.id,
         status: "open",
         last_message_at: new Date().toISOString(),
+        last_inbound_at: new Date(Date.parse(msg.sentAt) || Date.now()).toISOString(),
         last_message_preview: preview,
         unread_count: 1,
       },

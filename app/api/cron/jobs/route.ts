@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { FlowLoadError, resumeSession } from "@/lib/flow-engine/engine";
 import type { Json } from "@/lib/types/database";
+import type { Platform } from "@/lib/types/database";
+import { adaptMessage } from "@/lib/flow-engine/platform-adapter";
+import { personalize, toContent } from "@/lib/broadcast-message";
+import { REACH_REASON, reachOf } from "@/lib/broadcast-reach";
+import { toReachChat } from "@/lib/contact-rows";
+import { messagePreview } from "@/lib/message-preview";
 import { OPT_OUT_JOB, OPT_OUT_MAX_ATTEMPTS, runOptOut, type OptOutPayload } from "@/lib/whatsapp-opt-out";
 
 // Signals the handler to skip retry/backoff and route straight to the
@@ -24,6 +30,9 @@ class SessionRecheckError extends Error {}
 // An invocation that has not written anything for this long is provably dead:
 // used both to reclaim stale job claims and to age flow_sessions.updated_at.
 const STALE_INVOCATION_MS = 5 * 60 * 1000;
+
+const JOBS_PER_RUN = 20;
+const BROADCASTS_PER_RUN = 15;
 
 function wasSessionWrittenRecently(updatedAt: string): boolean {
   return new Date(updatedAt).getTime() > Date.now() - STALE_INVOCATION_MS;
@@ -63,19 +72,26 @@ export async function GET(request: NextRequest) {
   // during a deploy; a lt. comparison is NULL-hostile and would skip them
   // forever). Those rows are NOT processed directly, only stamped, see below.
   const staleClaimCutoff = new Date(Date.now() - STALE_INVOCATION_MS).toISOString();
-  const { data: jobs, error } = await supabase
-    .from("scheduled_jobs")
-    .select("*")
-    .or(
-      `status.eq.pending,and(status.eq.processing,or(claimed_at.lt.${staleClaimCutoff},claimed_at.is.null))`
-    )
-    .lte("run_at", new Date().toISOString())
-    .order("run_at", { ascending: true })
-    .limit(20);
+  const dueJobs = () =>
+    supabase
+      .from("scheduled_jobs")
+      .select("*")
+      .or(
+        `status.eq.pending,and(status.eq.processing,or(claimed_at.lt.${staleClaimCutoff},claimed_at.is.null))`
+      )
+      .lte("run_at", new Date().toISOString())
+      .order("run_at", { ascending: true });
 
-  if (error || !jobs) {
+  // Flows and opt-outs first: a running broadcast only takes the room they leave.
+  const { data: first, error } = await dueJobs().neq("type", "send_broadcast").limit(JOBS_PER_RUN);
+  if (error || !first) {
     return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
   }
+  const room = Math.min(JOBS_PER_RUN - first.length, BROADCASTS_PER_RUN);
+  const { data: broadcasts, error: broadcastsError } =
+    room > 0 ? await dueJobs().eq("type", "send_broadcast").limit(room) : { data: [], error: null };
+  if (broadcastsError) console.error("Failed to fetch broadcast jobs:", broadcastsError);
+  const jobs = [...first, ...(broadcasts ?? [])];
 
   let processed = 0;
   let failed = 0;
@@ -553,47 +569,65 @@ async function processJob(
 
       if (recipient.status !== "pending") return;
 
-      // They may have unsubscribed after the broadcast was queued.
-      const contact = recipient.contacts as { is_subscribed: boolean } | null;
-      if (contact?.is_subscribed === false) {
-        await settleBroadcastRecipientAsFailed({
-          supabase,
-          job,
-          errorMessage: "Unsubscribed before this was sent",
-        });
+      const broadcast = recipient.broadcasts as {
+        workspace_id: string;
+        status: string;
+        message_content: Json;
+      } | null;
+      // Stopped from the page: what is left is not sent.
+      if (broadcast?.status === "cancelled") {
+        const { error: cancelError } = await supabase
+          .from("broadcast_recipients")
+          .update({ status: "cancelled" })
+          .eq("id", payload.recipientId)
+          .eq("status", "pending");
+        if (cancelError) throw new Error(`broadcast recipient could not be cancelled: ${cancelError.message}`);
         return;
       }
+      const skip = (errorMessage: string) => settleBroadcastRecipientAsFailed({ supabase, job, errorMessage });
 
-      // Get workspace API key
-      const broadcast = recipient.broadcasts as { workspace_id: string } | null;
-      if (!broadcast) return;
+      const contact = recipient.contacts as { is_subscribed: boolean; display_name: string | null } | null;
+      const channel = recipient.channels as { late_account_id: string; platform: Platform; is_active: boolean } | null;
+      if (!broadcast || !contact || !channel) return skip("Contact or channel is gone");
 
-      const { data: workspace } = await supabase
+      const { data: workspace, error: workspaceError } = await supabase
         .from("workspaces")
         .select("late_api_key_encrypted")
         .eq("id", broadcast.workspace_id)
         .single();
+      if (workspaceError) throw new Error(`workspace could not be loaded: ${workspaceError.message}`);
+      if (!workspace.late_api_key_encrypted) return skip("No Zernio API key");
 
-      if (!workspace?.late_api_key_encrypted) return;
+      // Checked again here: they may have unsubscribed, or the window may have closed, while this waited.
+      const { data: conv, error: convError } = await supabase
+        .from("conversations")
+        .select("id, channel_id, platform, late_conversation_id, last_inbound_at")
+        .eq("contact_id", recipient.contact_id)
+        .eq("channel_id", recipient.channel_id)
+        .maybeSingle();
+      if (convError) throw new Error(`conversation could not be loaded: ${convError.message}`);
+      const reach = reachOf(
+        {
+          isSubscribed: contact.is_subscribed,
+          chats: conv ? [toReachChat({ ...conv, channels: { is_active: channel.is_active } })] : [],
+        },
+        Date.now()
+      );
+      if (!reach.ok) return skip(`${REACH_REASON[reach.reason]} before this was sent`);
+      const lateConversationId = conv!.late_conversation_id!;
 
       const { createZernioClient } = await import("@/lib/zernio-client");
       const zernio = createZernioClient(workspace.late_api_key_encrypted);
-
-      const channel = recipient.channels as { late_account_id: string } | null;
-      if (!channel) return;
-
-      // Get the conversation for this contact+channel (need late_conversation_id)
-      const { data: conv } = await supabase
-        .from("conversations")
-        .select("late_conversation_id")
-        .eq("contact_id", recipient.contact_id)
-        .eq("channel_id", recipient.channel_id)
-        .single();
-
-      if (!conv?.late_conversation_id) return;
-
-      const broadcastData = recipient.broadcasts as { message_content: { text?: string } } | null;
-      const messageContent = broadcastData?.message_content;
+      const content = toContent(broadcast.message_content);
+      const adapted = adaptMessage(
+        {
+          text: personalize(content.text, contact.display_name),
+          ...(content.buttonLabel && content.buttonUrl
+            ? { buttons: [{ type: "url" as const, title: content.buttonLabel, url: content.buttonUrl }] }
+            : {}),
+        },
+        channel.platform
+      );
 
       // CAS to 'sending' before the API call so a crash between the send and
       // the 'sent' write cannot cause a re-send when the job is reclaimed
@@ -615,20 +649,41 @@ async function processJob(
 
       try {
         await zernio.messages.sendInboxMessage({
-          path: { conversationId: conv.late_conversation_id },
-          body: { accountId: channel.late_account_id, message: messageContent?.text || "" },
+          path: { conversationId: lateConversationId },
+          body: {
+            accountId: channel.late_account_id,
+            message: adapted.text,
+            ...(adapted.buttons?.length ? { buttons: adapted.buttons } : {}),
+            ...(adapted.replyMarkup ? { replyMarkup: adapted.replyMarkup } : {}),
+          } as Parameters<typeof zernio.messages.sendInboxMessage>[0]["body"],
         });
 
-        await supabase
+        const { error: sentError } = await supabase
           .from("broadcast_recipients")
           .update({ status: "sent", sent_at: new Date().toISOString() })
           .eq("id", payload.recipientId);
+        if (sentError) throw new Error("Sent, but the result could not be saved");
 
         // Increment broadcast sent count
         await supabase.rpc("increment_broadcast_sent", {
           b_id: payload.broadcastId,
         });
+
+        // The inbox shows it, and the contact's tags are read again.
+        await supabase
+          .from("conversations")
+          .update({ last_message_at: new Date().toISOString(), last_message_preview: messagePreview(adapted.text) })
+          .eq("id", conv!.id);
       } catch (err) {
+        // Not sent, only told to slow down: back in the queue, the job retries with backoff.
+        if ((err as { statusCode?: number }).statusCode === 429) {
+          await supabase
+            .from("broadcast_recipients")
+            .update({ status: "pending" })
+            .eq("id", payload.recipientId)
+            .eq("status", "sending");
+          throw err;
+        }
         await supabase
           .from("broadcast_recipients")
           .update({

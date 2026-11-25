@@ -49,7 +49,8 @@ export function ContactAvatar({
       className={cn("flex items-center justify-center rounded-full font-medium", className)}
       style={{ backgroundColor: `hsl(${hue} 55% 88%)`, color: `hsl(${hue} 60% 28%)` }}
     >
-      {label[0].toUpperCase()}
+      {/* by character: label[0] cuts an emoji or styled letter in half and breaks hydration */}
+      {Array.from(label)[0].toUpperCase()}
     </div>
   );
 }
