@@ -11,6 +11,7 @@ import { useMounted } from "@/components/use-mounted";
 import { storeSelection } from "@/lib/broadcast-selection";
 import { writeFilter, type ContactFilter, type FilterTag } from "@/lib/contact-filter";
 import type { ContactRow } from "@/lib/contact-rows";
+import type { Account } from "@/lib/accounts";
 
 const ROWS = 100;
 
@@ -28,11 +29,13 @@ function formatDate(dateStr: string | null): string {
 export function ContactsView({
   contacts,
   tags,
+  accounts,
   workspaceId,
   initialFilter,
 }: {
   contacts: ContactRow[];
   tags: FilterTag[];
+  accounts: Account[];
   workspaceId: string;
   initialFilter: ContactFilter;
 }) {
@@ -90,7 +93,7 @@ export function ContactsView({
             New broadcast
           </Link>
         </div>
-        <ContactFilters list={list} tags={tags} workspaceId={workspaceId} onChange={() => setShown(ROWS)} />
+        <ContactFilters list={list} tags={tags} accounts={accounts} workspaceId={workspaceId} onChange={() => setShown(ROWS)} />
       </div>
 
       {/* Table */}

@@ -2,6 +2,7 @@ import { getWorkspace } from "@/lib/workspace";
 import { readFilter } from "@/lib/contact-filter";
 import { toContent } from "@/lib/broadcast-message";
 import { loadContactRows } from "@/lib/contact-rows";
+import { loadAccounts } from "@/lib/accounts";
 import { fromTemplate } from "@/lib/message-templates";
 import { Composer } from "./composer";
 
@@ -13,7 +14,7 @@ export default async function NewBroadcastPage({
   const { workspace, supabase } = await getWorkspace();
   const params = await searchParams;
 
-  const [contacts, { data: tags }, { data: templates }, { data: draft }] = await Promise.all([
+  const [contacts, { data: tags }, { data: templates }, { data: draft }, accounts] = await Promise.all([
     loadContactRows(supabase, workspace.id),
     supabase.from("tags").select("id, name, color, category").eq("workspace_id", workspace.id).order("name"),
     supabase.from("message_templates").select("*").eq("workspace_id", workspace.id).order("name"),
@@ -26,6 +27,7 @@ export default async function NewBroadcastPage({
           .eq("status", "draft")
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    loadAccounts(supabase, workspace.id),
   ]);
 
   const template = (templates ?? []).find((t) => t.id === params.template);
@@ -33,6 +35,7 @@ export default async function NewBroadcastPage({
     <Composer
       contacts={contacts}
       tags={tags ?? []}
+      accounts={accounts}
       templates={templates ?? []}
       workspaceId={workspace.id}
       initialFilter={readFilter(params)}

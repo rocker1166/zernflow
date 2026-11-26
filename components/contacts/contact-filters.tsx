@@ -7,8 +7,10 @@ import { SegmentBuilder, createEmptyFilter } from "@/components/segment-builder"
 import { FacetMenu } from "@/components/contacts/facet-menu";
 import { groupTags } from "@/lib/smart-tags/taxonomy";
 import type { SegmentFilter } from "@/lib/segments";
+import type { Account } from "@/lib/accounts";
 import {
   ACTIVE_WITHIN,
+  countAccounts,
   countTags,
   EMPTY_CONTACT_FILTER,
   filterContacts,
@@ -26,27 +28,30 @@ export function useContactFilter<T extends FilterContact>(contacts: T[], tags: F
   const [now] = useState(() => Date.now());
 
   const activeSegment = showSegment ? segment : undefined;
-  const { matching, counts } = useMemo(
+  const { matching, counts, accountCounts } = useMemo(
     () => ({
       matching: filterContacts(contacts, filter, tags, now, activeSegment),
       counts: countTags(contacts, filter, tags, now, activeSegment),
+      accountCounts: countAccounts(contacts, filter, tags, now, activeSegment),
     }),
     [contacts, filter, tags, now, activeSegment]
   );
   const update = (change: Partial<ContactFilter>) => setFilter((f) => ({ ...f, ...change }));
 
-  return { filter, update, segment, setSegment, showSegment, setShowSegment, matching, counts };
+  return { filter, update, segment, setSegment, showSegment, setShowSegment, matching, counts, accountCounts };
 }
 
 /** Stage buttons, search, one menu per tag group, and the segment builder. */
 export function ContactFilters({
   list,
   tags,
+  accounts,
   workspaceId,
   onChange,
 }: {
   list: ReturnType<typeof useContactFilter>;
   tags: FilterTag[];
+  accounts: Account[];
   workspaceId: string;
   onChange?: () => void;
 }) {
@@ -106,6 +111,14 @@ export function ContactFilters({
             className="w-full rounded-lg border border-input bg-background py-1.5 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
+        {accounts.length > 1 && (
+          <FacetMenu
+            label="Account"
+            options={accounts.map((a) => ({ value: a.id, label: a.label, count: list.accountCounts.get(a.id) ?? 0 }))}
+            selected={filter.accounts}
+            onChange={(accounts) => update({ accounts })}
+          />
+        )}
         {facets.map((group) => (
           <FacetMenu
             key={group.key}

@@ -4,6 +4,7 @@ import { completeRules, matchesSegment, readAll, type FilterField, type FilterOp
 const contact: SegmentContact = {
   tags: [{ id: "t1", name: "Creator" }],
   platforms: ["instagram"],
+  channelIds: ["c1"],
   isSubscribed: true,
   lastInteractionAt: "2026-11-20T00:00:00Z",
   customFields: [{ slug: "city", value: "Delhi" }, { slug: "age", value: "9" }],

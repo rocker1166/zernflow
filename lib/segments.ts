@@ -42,6 +42,8 @@ export interface SegmentContact {
   /** ids and names: filters saved by the builder hold ids, older ones names */
   tags: { id: string; name: string }[];
   platforms: string[];
+  /** The connected accounts they talk to. */
+  channelIds: string[];
   isSubscribed: boolean;
   lastInteractionAt: string | null;
   customFields: { slug: string; value: string }[];
@@ -143,13 +145,13 @@ function splitField(value: string): [string, string] {
 
 /** The fields toSegmentContact() reads. */
 export const SEGMENT_FIELDS =
-  "is_subscribed, last_interaction_at, contact_tags(tags(id, name)), contact_channels(platform_username, channels(platform)), contact_custom_fields(value, custom_field_definitions(slug))" as const;
+  "is_subscribed, last_interaction_at, contact_tags(tags(id, name)), contact_channels(channel_id, platform_username, channels(platform)), contact_custom_fields(value, custom_field_definitions(slug))" as const;
 
 interface SegmentRow {
   is_subscribed: boolean;
   last_interaction_at: string | null;
   contact_tags: { tags: { id: string; name: string } | null }[];
-  contact_channels: { channels: { platform: string } | null }[];
+  contact_channels: { channel_id: string; channels: { platform: string } | null }[];
   contact_custom_fields: { value: string; custom_field_definitions: { slug: string } | null }[];
 }
 
@@ -157,6 +159,7 @@ export function toSegmentContact(row: SegmentRow): SegmentContact {
   return {
     tags: row.contact_tags.flatMap((ct) => (ct.tags ? [ct.tags] : [])),
     platforms: row.contact_channels.flatMap((cc) => (cc.channels ? [cc.channels.platform] : [])),
+    channelIds: row.contact_channels.map((cc) => cc.channel_id),
     isSubscribed: row.is_subscribed,
     lastInteractionAt: row.last_interaction_at,
     customFields: row.contact_custom_fields.flatMap((f) =>

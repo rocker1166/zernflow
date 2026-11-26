@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
 import { ContactAvatar } from "@/components/inbox/contact-avatar";
 import { FacetMenu } from "@/components/contacts/facet-menu";
+import type { Account } from "@/lib/accounts";
 import { TagChip } from "@/components/tag-chip";
 import { compareTags, groupTags } from "@/lib/smart-tags/taxonomy";
 import type { Database, Platform, ConversationStatus } from "@/lib/types/database";
@@ -38,12 +39,14 @@ function formatTime(dateStr: string | null): string {
 export function ConversationList({
   conversations: initialConversations,
   tags,
+  accounts,
   workspaceId,
   selectedId,
   onSelect,
 }: {
   conversations: Conversation[];
   tags: InboxTag[];
+  accounts: Account[];
   workspaceId: string;
   selectedId: string | null;
   onSelect: (conversation: Conversation) => void;
@@ -51,6 +54,7 @@ export function ConversationList({
   const [conversations, setConversations] = useState(initialConversations);
   const [search, setSearch] = useState("");
   const [tagIds, setTagIds] = useState<string[]>([]);
+  const [accountIds, setAccountIds] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("open");
   // Relative timestamps depend on the client's clock/locale, which differ from the
   // server's during SSR and trigger a hydration mismatch (React #418, which crashes
@@ -117,6 +121,7 @@ export function ConversationList({
     .filter((g) => g.length > 0);
 
   const filtered = conversations.filter((c) => {
+    if (accountIds.length && !accountIds.includes(c.channel_id)) return false;
     if (!wanted.every((group) => group.some((t) => wears(c, t.id)))) return false;
     if (statusFilter !== "all" && c.status !== statusFilter) return false;
     if (search) {
@@ -171,8 +176,20 @@ export function ConversationList({
       </div>
 
       {/* Tag filters */}
-      {groups.length > 0 && (
-        <div className="flex gap-1.5 px-3 pb-2">
+      {(groups.length > 0 || accounts.length > 1) && (
+        <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+          {accounts.length > 1 && (
+            <FacetMenu
+              label="Account"
+              options={accounts.map((a) => ({
+                value: a.id,
+                label: a.label,
+                count: conversations.filter((c) => c.channel_id === a.id).length,
+              }))}
+              selected={accountIds}
+              onChange={setAccountIds}
+            />
+          )}
           {groups.map((group) => (
             <FacetMenu
               key={group.key}

@@ -24,12 +24,14 @@ export interface ContactFilter {
   /** Days, or "" for any time. */
   within: string;
   subscribed: "" | "yes" | "no";
+  /** Connected account (channel) ids; any of them. */
+  accounts: string[];
 }
 
-export const EMPTY_CONTACT_FILTER: ContactFilter = { q: "", tagIds: [], within: "", subscribed: "" };
+export const EMPTY_CONTACT_FILTER: ContactFilter = { q: "", tagIds: [], within: "", subscribed: "", accounts: [] };
 
 export function isFiltering(f: ContactFilter): boolean {
-  return Boolean(f.q || f.tagIds.length || f.within || f.subscribed);
+  return Boolean(f.q || f.tagIds.length || f.within || f.subscribed || f.accounts.length);
 }
 
 const groupOf = (tag: FilterTag) => tag.category ?? "other";
@@ -58,9 +60,25 @@ export function filterContacts<T extends FilterContact>(
     if (q && ![c.name, c.email ?? "", ...c.usernames].some((v) => v.toLowerCase().includes(q))) return false;
     if (since !== null && !(c.lastInteractionAt && Date.parse(c.lastInteractionAt) >= since)) return false;
     if (f.subscribed && c.isSubscribed !== (f.subscribed === "yes")) return false;
+    if (f.accounts.length && !c.channelIds.some((id) => f.accounts.includes(id))) return false;
     if (!groups.every((ids) => c.tags.some((t) => ids.has(t.id)))) return false;
     return !live || matchesSegment(c, live);
   });
+}
+
+/** How many contacts each account would show, given every other filter. */
+export function countAccounts<T extends FilterContact>(
+  contacts: T[],
+  f: ContactFilter,
+  tags: FilterTag[],
+  now: number,
+  segment?: SegmentFilter
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const c of filterContacts(contacts, { ...f, accounts: [] }, tags, now, segment)) {
+    for (const id of new Set(c.channelIds)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** How many contacts each tag would show, given every other filter. */
@@ -91,6 +109,7 @@ export function readFilter(params: Record<string, string | string[] | undefined>
     tagIds: one("tags").split(",").filter(Boolean),
     within: one("within") in ACTIVE_WITHIN ? one("within") : "",
     subscribed: sub === "yes" || sub === "no" ? sub : "",
+    accounts: one("acc").split(",").filter(Boolean),
   };
 }
 
@@ -100,6 +119,7 @@ export function writeFilter(f: ContactFilter): string {
   if (f.tagIds.length) p.set("tags", f.tagIds.join(","));
   if (f.within) p.set("within", f.within);
   if (f.subscribed) p.set("sub", f.subscribed);
+  if (f.accounts.length) p.set("acc", f.accounts.join(","));
   const s = p.toString();
   return s ? `?${s}` : "";
 }

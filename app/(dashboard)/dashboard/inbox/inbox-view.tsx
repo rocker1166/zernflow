@@ -7,6 +7,7 @@ import { ConversationList, type Conversation, type InboxTag } from "@/components
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactPanel } from "@/components/inbox/contact-panel";
 import { createClient } from "@/lib/supabase/client";
+import type { Account } from "@/lib/accounts";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/lib/types/database";
 
@@ -15,11 +16,13 @@ type Message = Database["public"]["Tables"]["messages"]["Row"];
 export function InboxView({
   conversations,
   tags,
+  accounts,
   workspaceId,
   initialSelectedId = null,
 }: {
   conversations: Conversation[];
   tags: InboxTag[];
+  accounts: Account[];
   workspaceId: string;
   initialSelectedId?: string | null;
 }) {
@@ -114,6 +117,7 @@ export function InboxView({
         <ConversationList
           conversations={conversations}
           tags={tags}
+          accounts={accounts}
           workspaceId={workspaceId}
           selectedId={selected?.id ?? null}
           onSelect={handleSelect}

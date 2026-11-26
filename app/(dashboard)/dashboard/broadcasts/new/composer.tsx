@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fromTemplate, saveTemplate, type Template } from "@/lib/message-templates";
 import type { ContactFilter, FilterTag } from "@/lib/contact-filter";
 import type { ContactRow } from "@/lib/contact-rows";
+import type { Account } from "@/lib/accounts";
 import type { Json } from "@/lib/types/database";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const ROWS = 100;
 interface ComposerProps {
   contacts: ContactRow[];
   tags: FilterTag[];
+  accounts: Account[];
   templates: Template[];
   workspaceId: string;
   initialFilter: ContactFilter;
@@ -41,6 +43,7 @@ export function Composer(props: ComposerProps) {
 function ComposerInner({
   contacts,
   tags,
+  accounts,
   templates,
   workspaceId,
   initialFilter,
@@ -179,7 +182,7 @@ function ComposerInner({
               {leftOut} of the {carried.size} you ticked cannot get a message now and {leftOut === 1 ? "was" : "were"} left out.
             </p>
           )}
-          <ContactFilters list={list} tags={tags} workspaceId={workspaceId} onChange={() => setShown(ROWS)} />
+          <ContactFilters list={list} tags={tags} accounts={accounts} workspaceId={workspaceId} onChange={() => setShown(ROWS)} />
           <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
