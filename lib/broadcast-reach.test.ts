@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reachOf, timeLeft, type ReachChat } from "@/lib/broadcast-reach";
+import { reachOf, replyWindow, timeLeft, type ReachChat } from "@/lib/broadcast-reach";
 
 const NOW = Date.parse("2026-11-26T12:00:00Z");
 const H = 3_600_000;
@@ -29,5 +29,20 @@ describe("reachOf", () => {
   it("says how long is left", () => {
     expect(timeLeft(NOW + 5.5 * H, NOW)).toBe("5 h left");
     expect(timeLeft(NOW + 0.5 * H, NOW)).toBe("30 min left");
+  });
+});
+
+describe("replyWindow", () => {
+  const at = (hoursAgo: number) => new Date(NOW - hoursAgo * H).toISOString();
+  it("is a normal reply within 24 hours, when unknown, and where there is no window", () => {
+    expect(replyWindow("instagram", at(23), NOW)).toEqual({ mode: "open" });
+    expect(replyWindow("instagram", null, NOW)).toEqual({ mode: "open" });
+    expect(replyWindow("telegram", at(500), NOW)).toEqual({ mode: "open" });
+  });
+  it("uses the human-agent tag from 24 hours to 7 days, on Instagram and Messenger only", () => {
+    expect(replyWindow("instagram", at(24), NOW)).toEqual({ mode: "human_agent", until: NOW + 144 * H });
+    expect(replyWindow("facebook", at(167), NOW)).toMatchObject({ mode: "human_agent" });
+    expect(replyWindow("instagram", at(168), NOW)).toEqual({ mode: "closed", reason: "expired" });
+    expect(replyWindow("whatsapp", at(25), NOW)).toEqual({ mode: "closed", reason: "needs_template" });
   });
 });

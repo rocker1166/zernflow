@@ -5,6 +5,7 @@ import { messagePreview } from "@/lib/message-preview";
 import { mapZernioMessage } from "@/lib/inbox-messages";
 import { checkAttachment, type AttachmentKind } from "@/lib/inbox-upload";
 import { uploadToZernio } from "@/lib/zernio-media";
+import { replyWindow } from "@/lib/broadcast-reach";
 
 /**
  * GET /api/v1/messages?conversationId=...
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
   // Look up the Zernio conversation ID and workspace API key
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("late_conversation_id, workspace_id, contact_id, channels(late_account_id)")
+    .select("late_conversation_id, workspace_id, contact_id, last_inbound_at, channels(late_account_id)")
     .eq("id", conversationId)
     .single();
 
@@ -77,6 +78,16 @@ export async function GET(request: NextRequest) {
 
     // Map Zernio messages to the shape the inbox UI expects
     const messages = zernioMessages.map((m) => mapZernioMessage(m as Parameters<typeof mapZernioMessage>[0], conversationId));
+
+    // Their last message decides how long a reply is allowed; never moved back.
+    const lastInbound = messages.filter((m) => m.direction === "inbound").map((m) => m.created_at).sort().at(-1);
+    if (lastInbound && (!conversation.last_inbound_at || lastInbound > conversation.last_inbound_at)) {
+      await supabase
+        .from("conversations")
+        .update({ last_inbound_at: lastInbound })
+        .eq("id", conversationId)
+        .or(`last_inbound_at.is.null,last_inbound_at.lt.${lastInbound}`);
+    }
 
     // The open chat shows the picture straight away; the list picks it up on the next load.
     return NextResponse.json(messages, picture ? { headers: { "x-contact-avatar": picture } } : undefined);
@@ -163,6 +174,22 @@ export async function POST(request: NextRequest) {
     attachment = { url: "", kind: check.kind, name: file.name };
   }
 
+  // Meta's window: after 24 hours a person may still answer on Instagram for 7 days, with the
+  // human-agent tag. A reply typed here is always a person's own; broadcasts never use the tag.
+  const reply = replyWindow(conversation.platform, conversation.last_inbound_at, Date.now());
+  if (reply.mode === "closed") {
+    return NextResponse.json(
+      {
+        error:
+          reply.reason === "needs_template"
+            ? "Their last message was over 24 hours ago. WhatsApp only allows an approved template now."
+            : "Their last message was over 7 days ago. Instagram allows no reply until they write again.",
+      },
+      { status: 400 }
+    );
+  }
+  const humanAgent = reply.mode === "human_agent" ? { messagingType: "MESSAGE_TAG" as const, messageTag: "HUMAN_AGENT" as const } : {};
+
   // Send via Zernio SDK — Zernio stores the message, no local insert needed
   try {
     const zernio = createZernioClient(workspace.late_api_key_encrypted);
@@ -178,6 +205,7 @@ export async function POST(request: NextRequest) {
         ...(attachment
           ? { attachmentUrl: attachment.url, attachmentType: attachment.kind, attachmentName: attachment.name }
           : {}),
+        ...humanAgent,
       },
     });
 
@@ -216,8 +244,13 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Failed to send message via Zernio API:", error);
+    const detail = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: `Failed to send message: ${error}` },
+      {
+        error: humanAgent.messageTag
+          ? `Instagram did not take this reply after 24 hours: ${detail}`
+          : `Failed to send message: ${detail}`,
+      },
       { status: 500 }
     );
   }

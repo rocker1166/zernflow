@@ -52,3 +52,26 @@ export function timeLeft(closesAt: number | null, now: number): string {
   const minutes = Math.max(0, Math.floor((closesAt - now) / 60_000));
   return minutes >= 60 ? `${Math.floor(minutes / 60)} h left` : `${minutes} min left`;
 }
+
+// ── One-to-one replies from the Inbox ───────────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Meta's human-agent tag: a person may answer for 7 days after their last message. Instagram and Messenger only. */
+export const HUMAN_AGENT_MS = 7 * DAY_MS;
+const HUMAN_AGENT_PLATFORMS = new Set(["instagram", "facebook"]);
+
+export type ReplyWindow =
+  /** Inside 24 hours, a platform without a window, or not known yet: send as usual. */
+  | { mode: "open" }
+  /** 24 hours to 7 days: send with the human-agent tag. */
+  | { mode: "human_agent"; until: number }
+  | { mode: "closed"; reason: "expired" | "needs_template" };
+
+export function replyWindow(platform: string, lastInboundAt: string | null, now: number): ReplyWindow {
+  if (!WINDOWED.has(platform) || !lastInboundAt) return { mode: "open" };
+  const at = Date.parse(lastInboundAt);
+  if (now < at + WINDOW_MS) return { mode: "open" };
+  if (!HUMAN_AGENT_PLATFORMS.has(platform)) return { mode: "closed", reason: "needs_template" };
+  if (now < at + HUMAN_AGENT_MS) return { mode: "human_agent", until: at + HUMAN_AGENT_MS };
+  return { mode: "closed", reason: "expired" };
+}

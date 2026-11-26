@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Send, Paperclip, Bot, MessageSquare, CheckCircle, Clock, RotateCcw, Loader2, X, Headset } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { replyWindow } from "@/lib/broadcast-reach";
 import { PlatformIcon } from "@/components/platform-icon";
 import { ContactAvatar } from "@/components/inbox/contact-avatar";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
@@ -144,6 +145,13 @@ export function MessageThread({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Loaded messages are fresher than the stored time; the clock is read once per chat.
+  const [now] = useState(() => Date.now());
+  const lastInbound =
+    messages.filter((m) => m.direction === "inbound").map((m) => m.created_at).sort().at(-1) ??
+    conversation?.last_inbound_at ??
+    null;
+  const reply = conversation ? replyWindow(conversation.platform, lastInbound, now) : null;
 
   const updateConversationStatus = useCallback(async (status: ConversationStatus) => {
     if (!conversation || statusUpdating) return;
@@ -237,7 +245,7 @@ export function MessageThread({
   }
 
   async function handleSend() {
-    if ((!input.trim() && !file) || !conversation || sending) return;
+    if ((!input.trim() && !file) || !conversation || sending || reply?.mode === "closed") return;
 
     const text = input.trim();
     const sendingFile = file;
@@ -339,7 +347,7 @@ export function MessageThread({
     (conversation.contacts as { contact_channels?: Array<{ platform_username: string | null }> } | null)
       ?.contact_channels?.find((c) => c.platform_username)?.platform_username ?? null;
   const profile = profileUrl(conversation.platform, handle);
-  const canSend = (!!input.trim() || !!file) && !sending;
+  const canSend = (!!input.trim() || !!file) && !sending && reply?.mode !== "closed";
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -458,6 +466,21 @@ export function MessageThread({
       {/* Composer */}
       <div className="border-t border-border p-4">
         <div className="mx-auto max-w-2xl">
+          {reply && reply.mode !== "open" && lastInbound && (
+            <p
+              role="status"
+              className={cn(
+                "mb-2 rounded-lg px-3 py-2 text-xs",
+                reply.mode === "closed" ? "bg-muted text-muted-foreground" : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+              )}
+            >
+              {reply.mode === "human_agent"
+                ? `They last wrote ${daysAgo(lastInbound, now)}. Instagram still lets you reply personally until ${new Date(reply.until).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}. Only your own answer, no offers or promotions.`
+                : reply.reason === "needs_template"
+                ? `They last wrote ${daysAgo(lastInbound, now)}. WhatsApp only allows an approved template now; send it from Kaafila admin.`
+                : `They last wrote ${daysAgo(lastInbound, now)}. Instagram allows no reply until they write again.`}
+            </p>
+          )}
           {(file || fileError) && (
             <div className="mb-2 flex items-center gap-2 text-xs">
               {file && (
@@ -510,11 +533,12 @@ export function MessageThread({
                     handleSend();
                   }
                 }}
-                placeholder="Type a message..."
+                placeholder={reply?.mode === "closed" ? "Replies are closed for this chat" : "Type a message..."}
+                disabled={reply?.mode === "closed"}
                 rows={1}
                 // block + h-10 so the box is exactly as tall as the 40px buttons beside it (an inline
                 // textarea leaves a few pixels of baseline gap, which pushed it above the send button).
-                className="block h-10 w-full resize-none rounded-lg border border-input bg-background px-4 py-[9px] text-sm leading-5 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="block h-10 w-full resize-none rounded-lg border border-input bg-background px-4 py-[9px] text-sm leading-5 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ maxHeight: 150 }}
               />
             </div>
@@ -536,4 +560,9 @@ export function MessageThread({
       </div>
     </div>
   );
+}
+
+function daysAgo(iso: string, now: number): string {
+  const days = Math.floor((now - Date.parse(iso)) / 86_400_000);
+  return days <= 1 ? "a day ago" : `${days} days ago`;
 }
